@@ -1,12 +1,13 @@
 package ee.taltech.inbankbackend.service;
 
+import com.github.vladislavgoltjajev.personalcode.exception.PersonalCodeException;
+import com.github.vladislavgoltjajev.personalcode.locale.estonia.EstonianPersonalCodeParser;
 import com.github.vladislavgoltjajev.personalcode.locale.estonia.EstonianPersonalCodeValidator;
 import ee.taltech.inbankbackend.config.DecisionEngineConstants;
-import ee.taltech.inbankbackend.exceptions.InvalidLoanAmountException;
-import ee.taltech.inbankbackend.exceptions.InvalidLoanPeriodException;
-import ee.taltech.inbankbackend.exceptions.InvalidPersonalCodeException;
-import ee.taltech.inbankbackend.exceptions.NoValidLoanException;
+import ee.taltech.inbankbackend.exceptions.*;
 import org.springframework.stereotype.Service;
+
+import java.time.Period;
 
 /**
  * A service class that provides a method for calculating an approved loan amount and period for a customer.
@@ -18,6 +19,9 @@ public class DecisionEngine {
 
     // Used to check for the validity of the presented ID code.
     private final EstonianPersonalCodeValidator validator = new EstonianPersonalCodeValidator();
+
+    // Used to get the loaners age
+    private final EstonianPersonalCodeParser codeParser = new EstonianPersonalCodeParser();
 
     /**
      * Calculates the maximum loan amount and period for the customer based on their ID code,
@@ -33,10 +37,11 @@ public class DecisionEngine {
      * @throws InvalidLoanAmountException If the requested loan amount is invalid
      * @throws InvalidLoanPeriodException If the requested loan period is invalid
      * @throws NoValidLoanException If there is no valid loan found for the given ID code, loan amount and loan period
+     * @throws InvalidLoanerAgeException If the requested loaner is underaged or too old
      */
     public Decision calculateApprovedLoan(String personalCode, Long loanAmount, int loanPeriod)
             throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException,
-            NoValidLoanException {
+            NoValidLoanException, InvalidLoanerAgeException {
         try {
             verifyInputs(personalCode, loanAmount, loanPeriod);
         } catch (Exception e) {
@@ -119,11 +124,23 @@ public class DecisionEngine {
      * @throws InvalidLoanPeriodException If the requested loan period is invalid
      */
     private void verifyInputs(String personalCode, Long loanAmount, int loanPeriod)
-            throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException {
+            throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException, InvalidLoanerAgeException {
 
         if (!validator.isValid(personalCode)) {
             throw new InvalidPersonalCodeException("Invalid personal ID code!");
         }
+        Period loanerAge;
+        try {
+            loanerAge = codeParser.getAge(personalCode);
+        } catch (PersonalCodeException e) {
+            throw new RuntimeException(e); // Should not be thrown
+        }
+        if (loanerAge.toTotalMonths() < DecisionEngineConstants.MINIMUM_LOANER_AGE * 12) {
+            throw new InvalidLoanerAgeException("Too young to get a loan!");
+        } else if (loanerAge.toTotalMonths() >  getMaximumAgeMonths()) {
+            throw new InvalidLoanerAgeException("Too old to get a loan!");
+        }
+
         if (!(DecisionEngineConstants.MINIMUM_LOAN_AMOUNT <= loanAmount)
                 || !(loanAmount <= DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT)) {
             throw new InvalidLoanAmountException("Invalid loan amount!");
@@ -133,5 +150,13 @@ public class DecisionEngine {
             throw new InvalidLoanPeriodException("Invalid loan period!");
         }
 
+    }
+
+    /**
+     * Calculates the loaners maximum age in months based on expected lifetime and maximum loan period
+     * @return Maximum age in months
+     */
+    private static int getMaximumAgeMonths() {
+        return DecisionEngineConstants.EXPECTED_LIFETIME * 12 - DecisionEngineConstants.MAXIMUM_LOAN_PERIOD;
     }
 }
