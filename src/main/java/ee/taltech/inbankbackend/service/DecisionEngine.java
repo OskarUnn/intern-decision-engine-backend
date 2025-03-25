@@ -18,7 +18,6 @@ public class DecisionEngine {
 
     // Used to check for the validity of the presented ID code.
     private final EstonianPersonalCodeValidator validator = new EstonianPersonalCodeValidator();
-    private int creditModifier = 0;
 
     /**
      * Calculates the maximum loan amount and period for the customer based on their ID code,
@@ -44,33 +43,44 @@ public class DecisionEngine {
             return new Decision(null, null, e.getMessage());
         }
 
-        int outputLoanAmount;
-        creditModifier = getCreditModifier(personalCode);
+        int creditModifier = getCreditModifier(personalCode);
 
+        // No loans for people with debt
         if (creditModifier == 0) {
             throw new NoValidLoanException("No valid loan found!");
         }
 
-        while (highestValidLoanAmount(loanPeriod) < DecisionEngineConstants.MINIMUM_LOAN_AMOUNT) {
-            loanPeriod++;
-        }
+        // Calculate the maximum loan we would approve
+        int outputLoanAmount = Math.min(maximumValidLoanAmount(creditModifier, loanPeriod), DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT);
 
-        if (loanPeriod <= DecisionEngineConstants.MAXIMUM_LOAN_PERIOD) {
-            outputLoanAmount = Math.min(DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT, highestValidLoanAmount(loanPeriod));
-        } else {
-            throw new NoValidLoanException("No valid loan found!");
+        if (outputLoanAmount < DecisionEngineConstants.MINIMUM_LOAN_AMOUNT) {
+            outputLoanAmount = DecisionEngineConstants.MINIMUM_LOAN_AMOUNT;
+
+            // Increase loan period to approve the minimum loan amount
+            loanPeriod = minimumLoanPeriod(creditModifier);
+
+            if (loanPeriod > DecisionEngineConstants.MAXIMUM_LOAN_PERIOD) {
+                throw new NoValidLoanException("No valid loan found!");
+            }
         }
 
         return new Decision(outputLoanAmount, loanPeriod, null);
     }
 
     /**
-     * Calculates the largest valid loan for the current credit modifier and loan period.
-     *
-     * @return Largest valid loan amount
+     * Calculates the maximum valid loan for the given credit modifier, loan period and the minimum credit score constant.
+     * @return Maximum valid loan amount
      */
-    private int highestValidLoanAmount(int loanPeriod) {
-        return creditModifier * loanPeriod;
+    private static int maximumValidLoanAmount(int creditModifier, int loanPeriod) {
+        return (int) ((creditModifier * loanPeriod) / (10 * DecisionEngineConstants.MINIMUM_APPROVED_CREDIT_SCORE));
+    }
+
+    /**
+     * Calculate the minimum loan period to approve the minimum loan amount
+     * @return Minimum loan period
+     */
+    private static int minimumLoanPeriod(int creditModifier) {
+        return (int) Math.ceil((DecisionEngineConstants.MINIMUM_APPROVED_CREDIT_SCORE * 10 * DecisionEngineConstants.MINIMUM_LOAN_AMOUNT) / creditModifier);
     }
 
     /**

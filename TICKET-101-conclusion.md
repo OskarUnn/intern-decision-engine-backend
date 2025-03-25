@@ -32,4 +32,4 @@
 - DecisionEngineController is in a module called "endpoint", I would rename the module to "controller" to follow best practices
 
 ## Most important shortcoming
-The decision engine does not determine the loan based on the credit score as specified in the requirements
+The decision engine does not determine the loan based on the credit score and the constraints as specified in the requirements
